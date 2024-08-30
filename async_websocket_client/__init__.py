@@ -1,1 +1,1 @@
-from .ws import AsyncWebsocketClient
+from .async_websocket import AsyncWebsocketClient

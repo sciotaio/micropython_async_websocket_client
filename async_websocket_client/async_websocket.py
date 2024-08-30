@@ -5,7 +5,10 @@ import urandom as random
 from ucollections import namedtuple
 import ure as re
 import ustruct as struct
-import ussl
+try:
+    import ussl
+except ImportError:
+    import ssl as ussl
 
 # Opcodes
 OP_CONT = const(0x0)
@@ -101,10 +104,11 @@ class AsyncWebsocketClient:
         if self.sock:
             self.close()
 
-        self.sock = socket.socket()
         self.uri = self.urlparse(uri)
         ai = socket.getaddrinfo(self.uri.hostname, self.uri.port)
         addr = ai[0][4]
+        af = ai[0][0]
+        self.sock = socket.socket(af)
         self.sock.connect(addr)
         self.sock.setblocking(False)
         if self.uri.protocol == 'wss':
