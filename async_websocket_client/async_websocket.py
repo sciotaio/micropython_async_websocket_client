@@ -1,14 +1,11 @@
-import usocket as socket
-import uasyncio as a
-import ubinascii as binascii
-import urandom as random
-from ucollections import namedtuple
-import ure as re
-import ustruct as struct
-try:
-    import ussl
-except ImportError:
-    import ssl as ussl
+import socket
+import asyncio as a
+import binascii
+import random
+from collections import namedtuple
+import re
+import struct
+import ssl
 
 # Opcodes
 OP_CONT = const(0x0)
@@ -36,22 +33,19 @@ class AsyncWebsocketClient:
     def __init__(self, ms_delay_for_read: int = 5):
         self._open = False
         self.delay_read = ms_delay_for_read
-        self._lock_for_open = a.Lock()
         self.sock = None
 
-    async def open(self, new_val: bool = None):
-        await self._lock_for_open.acquire()
+    def open(self, new_val: bool = None):
         if new_val is not None:
             if not new_val and self.sock:
                 self.sock.close()
                 self.sock = None
             self._open = new_val
         to_return = self._open
-        self._lock_for_open.release()
         return to_return
 
-    async def close(self):
-        return await self.open(False)
+    def close(self):
+        return self.open(False)
 
     def urlparse(self, uri):
         """Parse ws or wss:// URLs"""
@@ -112,8 +106,7 @@ class AsyncWebsocketClient:
         self.sock.connect(addr)
         self.sock.setblocking(False)
         if self.uri.protocol == 'wss':
-            self.sock = ussl.wrap_socket(self.sock, server_hostname=self.uri.hostname)
-        # await self.open(False)
+            self.sock = ssl.wrap_socket(self.sock, server_hostname=self.uri.hostname)
 
         def send_header(header, *args):
             self.sock.write(header % args + '\r\n')
@@ -149,7 +142,7 @@ class AsyncWebsocketClient:
             line = await self.a_readline()
             header = (line)[:-2]
 
-        return await self.open(True)
+        return self.open(True)
 
     async def read_frame(self, max_size=None):
         # Frame header
@@ -223,13 +216,13 @@ class AsyncWebsocketClient:
         self.sock.write(data)
 
     async def recv(self):
-        while await self.open():
+        while self.open():
             try:
                 fin, opcode, data = await self.read_frame()
             # except (ValueError, EOFError) as ex:
             except Exception as ex:
                 print('Exception in recv while reading frame:', ex)
-                await self.open(False)
+                self.open(False)
                 return
 
             if not fin:
@@ -240,7 +233,7 @@ class AsyncWebsocketClient:
             elif opcode == OP_BYTES:
                 return data
             elif opcode == OP_CLOSE:
-                await self.open(False)
+                self.close()
                 return
             elif opcode == OP_PONG:
                 # Ignore this frame, keep waiting for a data frame
@@ -255,7 +248,7 @@ class AsyncWebsocketClient:
                 except Exception as ex:
                     print('Error sending pong frame:', ex)
                     # If sending the pong frame fails, close the connection
-                    await self.open(False)
+                    self.close()
                     return
             elif opcode == OP_CONT:
                 # This is a continuation of a previous frame
@@ -263,14 +256,17 @@ class AsyncWebsocketClient:
             else:
                 raise ValueError(opcode)
 
-    async def send(self, buf):
-        if not await self.open():
+    def send(self, buf):
+        if not self.open():
             return
         if isinstance(buf, str):
             opcode = OP_TEXT
             buf = buf.encode('utf-8')
         elif isinstance(buf, bytes):
             opcode = OP_BYTES
+        elif isinstance(buf, bytearray):
+            opcode = OP_BYTES
+            buf = bytes(buf)
         else:
-            raise TypeError()
+            raise TypeError("buf must be str, bytes or bytearray but is ", type(buf))
         self.write_frame(opcode, buf)
